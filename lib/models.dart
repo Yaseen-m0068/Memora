@@ -2,9 +2,9 @@
 enum Domain { attention, memory, fluency, language, visuospatial, perceptual }
 
 enum TaskType {
-  orientation,        // p1
-  serial7,            // p1
-  digitSpan,          // p1
+  orientation,
+  attentionAudio,// p1
+  serial7,           // p1
   recall3,            // p2
   fluencyLetter,      // p2
   fluencyAnimals,     // p2

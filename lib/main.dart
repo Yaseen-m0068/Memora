@@ -3,6 +3,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 
 import 'models.dart';
 import 'data/tasks.dart';
@@ -10,10 +13,14 @@ import 'scoring.dart';
 import 'auth/auth_service.dart';
 
 // UI
+import 'ui/home_screen.dart';
+import 'ui/app_gate.dart';
 import 'ui/task_widgets.dart';
 import 'ui/result_screen.dart';
 import 'ui/login_screen.dart';
 import 'ui/register_screen.dart';
+import 'theme/app_colors.dart';
+
 
 final assessmentProvider = StateProvider<Assessment>((ref) {
   return Assessment(
@@ -42,28 +49,90 @@ class MemoraApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = GoRouter(
-      initialLocation: '/login',
+      initialLocation: '/gate',
       routes: [
-        GoRoute(path: '/gate', builder: (_, __) => const _AuthGate()),
-        GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
-        GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
-        GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
+        GoRoute(
+          path: '/gate',
+          builder: (_, __) => const AppGate(),
+        ),
+
+        GoRoute(
+          path: '/',
+          builder: (_, __) => const HomeScreen(),
+        ),
+
         GoRoute(
           path: '/task/:idx',
-          builder: (_, s) {
-            final idx = int.parse(s.pathParameters['idx']!);
+          builder: (context, state) {
+            final idx = int.parse(state.pathParameters['idx']!);
             return TaskHost(index: idx);
           },
         ),
-        GoRoute(path: '/result', builder: (_, __) => const ResultScreen()),
+
+        GoRoute(
+          path: '/result',
+          builder: (_, __) => const ResultScreen(),
+        ),
+
+        GoRoute(
+          path: '/login',
+          builder: (_, __) => const LoginScreen(),
+        ),
+
+        GoRoute(
+          path: '/register',
+          builder: (_, __) => const RegisterScreen(),
+        ),
       ],
     );
 
     return MaterialApp.router(
       title: 'Memora',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorSchemeSeed: Colors.teal,
+        scaffoldBackgroundColor: AppColors.background,
+
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AppColors.primary,
+          primary: AppColors.primary,
+        ),
+
+        textTheme: const TextTheme(
+          headlineMedium: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textDark,
+          ),
+          bodyMedium: TextStyle(
+            fontSize: 14,
+            color: AppColors.textGrey,
+          ),
+        ),
+
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: AppColors.softGreen,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: AppColors.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: AppColors.border),
+          ),
+        ),
+
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
       ),
       routerConfig: router,
     );
@@ -99,35 +168,6 @@ class _AuthGate extends ConsumerWidget {
   }
 }
 
-// --- Home screen ---
-class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Memora (ACE-III)'),
-        actions: [
-          IconButton(
-            tooltip: 'Logout',
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await ref.read(authServiceProvider).logout();
-              if (context.mounted) context.go('/login');
-            },
-          )
-        ],
-      ),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () => context.go('/task/0'),
-          child: const Text('Start test'),
-        ),
-      ),
-    );
-  }
-}
 
 class TaskHost extends ConsumerStatefulWidget {
   final int index;
@@ -138,7 +178,42 @@ class TaskHost extends ConsumerStatefulWidget {
 }
 
 class _TaskHostState extends ConsumerState<TaskHost> {
-  void _finish(int score, Map<String, dynamic> data) {
+  Future<void> _saveAssessmentToFirestore(Assessment assessment) async {
+    final firestore = FirebaseFirestore.instance;
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw Exception('User not logged in');
+    }
+
+    final userId = user.uid;
+
+    final totalScore =
+    assessment.responses.fold<int>(0, (sum, r) => sum + r.score);
+
+    await firestore
+        .collection('users')
+        .doc(userId)
+        .collection('assessments')
+        .doc(assessment.id)
+        .set({
+      'assessmentId': assessment.id,
+      'language': assessment.language,
+      'startedAt': assessment.startedAt,
+      'completedAt': DateTime.now(),
+      'totalScore': totalScore,
+      'responses': assessment.responses.map((r) {
+        return {
+          'taskId': r.taskId,
+          'score': r.score,
+          'data': r.data,
+        };
+      }).toList(),
+    });
+  }
+
+
+  Future<void> _finish(int score, Map<String, dynamic> data) async {
     final spec = kAceTasks[widget.index];
     final assessment = ref.read(assessmentProvider);
 
@@ -154,8 +229,47 @@ class _TaskHostState extends ConsumerState<TaskHost> {
     if (widget.index + 1 < kAceTasks.length) {
       context.go('/task/${widget.index + 1}');
     } else {
+      await _saveAssessmentToFirestore(
+      ref.read(assessmentProvider),
+      );
+
       context.go('/result');
     }
+
+  }
+
+  void _confirmExit(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Exit Test'),
+        content: const Text(
+          'Are you sure you want to exit the test?\nYour progress will be lost.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+
+              // OPTIONAL: clear current assessment
+              ref.read(assessmentProvider.notifier).state =
+                  Assessment(
+                    id: const Uuid().v4(),
+                    language: "ml",
+                    startedAt: DateTime.now(),
+                  );
+
+              context.go('/'); // back to Home
+            },
+            child: const Text('Exit'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -168,8 +282,8 @@ class _TaskHostState extends ConsumerState<TaskHost> {
       case TaskType.orientation:
         body = OrientationTask(spec: spec, onDone: _finish);
         break;
-      case TaskType.digitSpan:
-        body = DigitSpanTask(spec: spec, onDone: _finish);
+      case TaskType.attentionAudio:
+        body = AttentionAudioTask(spec: spec, onDone: _finish);
         break;
       case TaskType.serial7:
         body = Serial7(spec: spec, onDone: _finish);
@@ -179,8 +293,12 @@ class _TaskHostState extends ConsumerState<TaskHost> {
         break;
       case TaskType.fluencyLetter:
       case TaskType.fluencyAnimals:
-        body = Fluency(spec: spec, onDone: _finish);
-        break;
+      body = Fluency(
+        key: ValueKey(spec.id), // 🔥 forces fresh state per task
+        spec: spec,
+        onDone: _finish,
+      );
+      break;
       case TaskType.nameAddressLearn:
         body = NameAddressLearnTask(spec: spec, onDone: _finish);
         break;
@@ -234,6 +352,13 @@ class _TaskHostState extends ConsumerState<TaskHost> {
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.index + 1}/${kAceTasks.length}'),
+        actions: [
+          TextButton.icon(
+            onPressed: () => context.go('/'),
+            icon: const Icon(Icons.exit_to_app, color: AppColors.primary),
+            label: const Text('Exit', style: TextStyle(color: AppColors.primary)),
+          )
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(12),

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart'; // for Ticker
 import '../models.dart';
 import '../scoring.dart';
+import 'dart:async';
+import 'package:flutter_tts/flutter_tts.dart';
+
 
 /// ========== COMMON MINI HELPERS ==========
 
@@ -81,108 +84,215 @@ class _OrientationTaskState extends State<OrientationTask> {
     ]);
   }
 }
+/// ========== ATTENTION (auto-score per non-empty for demo) ==========
 
-/// ========== DIGIT SPAN (auto-score exact sequences) ==========
-class DigitSpanTask extends StatefulWidget {
+
+class AttentionAudioTask extends StatefulWidget {
   final TaskSpec spec;
   final void Function(int, Map<String, dynamic>) onDone;
-  const DigitSpanTask({super.key, required this.spec, required this.onDone});
-  @override
-  State<DigitSpanTask> createState() => _DigitSpanTaskState();
-}
-class _DigitSpanTaskState extends State<DigitSpanTask> {
-  late final List<String> forward = (widget.spec.payload['forward'] as List).cast<String>();
-  late final List<String> backward = (widget.spec.payload['backward'] as List).cast<String>();
 
-  final _f = <TextEditingController>[];
-  final _b = <TextEditingController>[];
+  const AttentionAudioTask({
+    super.key,
+    required this.spec,
+    required this.onDone,
+  });
+
+  @override
+  State<AttentionAudioTask> createState() => _AttentionAudioTaskState();
+}
+
+class _AttentionAudioTaskState extends State<AttentionAudioTask> {
+  final FlutterTts _tts = FlutterTts();
+  final ctrls = List.generate(3, (_) => TextEditingController());
+
+  bool showInputs = false;
+  bool spoken = false;
 
   @override
   void initState() {
     super.initState();
-    for (var _ in forward) _f.add(TextEditingController());
-    for (var _ in backward) _b.add(TextEditingController());
+    _playWords();
+  }
+
+  Future<void> _playWords() async {
+    final words = (widget.spec.payload['words'] as List).cast<String>();
+
+    await _tts.setLanguage("en-US");
+    await _tts.setSpeechRate(0.4);
+
+    for (int i = 0; i < words.length; i++) {
+      await _tts.speak(words[i]);
+
+      // ✅ 2-second gap ONLY between words
+      if (i != words.length - 1) {
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+
+    // ✅ immediately allow input after last word
+    setState(() {
+      spoken = true;
+      showInputs = true;
+    });
+  }
+
+
+  @override
+  void dispose() {
+    _tts.stop();
+    for (final c in ctrls) {
+      c.dispose();
+    }
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return _padded(ListView(children: [
-      const Text('Digit Span — enter exactly as heard (spaces allowed)'),
-      const SizedBox(height: 8),
-      ...List.generate(forward.length, (i) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Forward ${i + 1}: ${forward[i]}'),
-          TextField(controller: _f[i], decoration: const InputDecoration(hintText: 'Your attempt')),
+    final words = (widget.spec.payload['words'] as List).cast<String>();
+
+    return _padded(Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Listen carefully to the words.',
+          style: TextStyle(fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+
+        if (!spoken)
+          const Text('🔊 Playing words…')
+        else if (!showInputs)
+          const Text('⏱ Please wait…'),
+
+        if (showInputs) ...[
+          const SizedBox(height: 12),
+          const Text('Enter the words you heard:'),
           const SizedBox(height: 8),
-        ],
-      )),
-      const SizedBox(height: 8),
-      ...List.generate(backward.length, (i) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Backward ${i + 1}: ${backward[i]}'),
-          TextField(controller: _b[i], decoration: const InputDecoration(hintText: 'Your attempt')),
-          const SizedBox(height: 8),
-        ],
-      )),
-      FilledButton(
-        onPressed: () {
-          int s = 0;
-          final tr = RegExp(r'\s+');
-          for (var i = 0; i < forward.length; i++) {
-            if (_f[i].text.trim().replaceAll(tr, ' ') == forward[i]) s++;
-          }
-          for (var i = 0; i < backward.length; i++) {
-            if (_b[i].text.trim().replaceAll(tr, ' ') == backward[i]) s++;
-          }
-          s = _clampScore(s, widget.spec.max);
-          widget.onDone(s, {
-            "forward": List.generate(forward.length, (i) => _f[i].text),
-            "backward": List.generate(backward.length, (i) => _b[i].text),
-          });
-        },
-        child: const Text('Next'),
-      )
-    ]));
+
+          for (int i = 0; i < 3; i++)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: TextField(
+                controller: ctrls[i],
+                decoration: InputDecoration(
+                  labelText: 'Word ${i + 1}',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () => _finish(words),
+            child: const Text('Next'),
+          ),
+        ]
+      ],
+    ));
+  }
+
+  void _finish(List<String> target) {
+    final user = ctrls.map((c) => c.text.trim().toLowerCase()).toList();
+    final tgt = target.map((e) => e.toLowerCase()).toList();
+
+    int score = 0;
+    for (final u in user) {
+      if (tgt.contains(u)) score++;
+    }
+
+    widget.onDone(
+      score,
+      {
+        "target": tgt,
+        "user": user,
+        "instruction": "Remember these words. You will be asked again later.",
+      },
+    );
   }
 }
+
+
 
 /// ========== SERIAL 7s (auto) ==========
 class Serial7 extends StatefulWidget {
   final TaskSpec spec;
   final void Function(int, Map<String, dynamic>) onDone;
   const Serial7({super.key, required this.spec, required this.onDone});
+
   @override
   State<Serial7> createState() => _Serial7State();
 }
+
 class _Serial7State extends State<Serial7> {
-  final _ctrl = TextEditingController();
+  final List<TextEditingController> ctrls =
+  List.generate(5, (_) => TextEditingController());
+
+  @override
+  void dispose() {
+    for (final c in ctrls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return _padded(Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Starting from 100, subtract 7 each time. Enter 5 numbers.'),
-        TextField(
-          controller: _ctrl,
-          decoration: const InputDecoration(hintText: "e.g., 93 86 79 72 65"),
+        const Text(
+          'Starting from 100, subtract 7 each time.\nEnter each answer in order.',
+          style: TextStyle(fontSize: 16),
         ),
+        const SizedBox(height: 16),
+
+        // ✅ Five clear input boxes
+        ...List.generate(5, (i) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: TextField(
+            controller: ctrls[i],
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Answer ${i + 1}',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        )),
+
         const Spacer(),
+
         FilledButton(
-          onPressed: () {
-            final parts = _ctrl.text.split(RegExp(r'[\s,]+')).where((e) => e.isNotEmpty).toList();
-            int s = 0, cur = widget.spec.payload["start"] as int;
-            for (int i = 0; i < parts.length && i < 5; i++) {
-              cur -= (widget.spec.payload["steps"] as int);
-              if (int.tryParse(parts[i]) == cur) s++;
-            }
-            widget.onDone(s, {"answers": parts});
-          },
+          onPressed: _submit,
           child: const Text('Next'),
-        )
+        ),
       ],
     ));
+  }
+
+  void _submit() {
+    int score = 0;
+    int current = widget.spec.payload['start'] as int;
+    final step = widget.spec.payload['steps'] as int;
+
+    final userAnswers = <int?>[];
+
+    for (int i = 0; i < 5; i++) {
+      current -= step;
+      final val = int.tryParse(ctrls[i].text.trim());
+      userAnswers.add(val);
+
+      if (val == current) {
+        score++;
+      }
+    }
+
+    widget.onDone(
+      score,
+      {
+        "userAnswers": userAnswers,
+        "max": 5,
+      },
+    );
   }
 }
 
@@ -227,56 +337,156 @@ class Fluency extends StatefulWidget {
   final TaskSpec spec;
   final void Function(int, Map<String, dynamic>) onDone;
   const Fluency({super.key, required this.spec, required this.onDone});
+
   @override
   State<Fluency> createState() => _FluencyState();
 }
-class _FluencyState extends State<Fluency> with SingleTickerProviderStateMixin {
-  final setWords = <String>{};
-  bool running = false;
-  int secs = 60;
 
-  late final Ticker ticker = Ticker(_tick);
-  void _tick(Duration _) {
-    if (secs > 0) {
-      setState(() => secs--);
-    } else {
-      ticker.stop();
-      _finish();
+class _FluencyState extends State<Fluency> {
+  late final String targetLetter;
+  final TextEditingController _textCtrl = TextEditingController();
+
+  Timer? _timer;
+  int secs = 60;
+  bool running = false;
+
+  bool _completed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetState();
+  }
+
+  void _resetState() {
+    _timer?.cancel();
+    secs = 60;
+    running = false;
+    _completed = false; // ✅ RESET
+    _textCtrl.clear();
+
+    if (widget.spec.type == TaskType.fluencyLetter) {
+      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      targetLetter =
+      letters[DateTime.now().millisecondsSinceEpoch % letters.length];
     }
   }
 
+
+
   @override
-  void dispose() { ticker.dispose(); super.dispose(); }
+  void dispose() {
+    _timer?.cancel();
+    _textCtrl.dispose();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (secs > 0) {
+        setState(() => secs--);
+      } else {
+        timer.cancel();
+        _finish();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return _padded(Column(children: [
-      Text(widget.spec.type == TaskType.fluencyAnimals
-          ? 'Name as many animals as you can'
-          : 'Say words starting with the target letter.'),
-      Text('Time: $secs s'),
-      Row(children: [
-        FilledButton(
-          onPressed: () {
-            if (!running) { running = true; ticker.start(); setState((){}); }
-          },
-          child: const Text('Start'),
+    return _padded(Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.spec.type == TaskType.fluencyAnimals
+              ? 'Name as many animals as you can'
+              : 'Say as many words as you can starting with the letter:',
+          style: const TextStyle(fontSize: 16),
         ),
-        const SizedBox(width: 8),
-        FilledButton(onPressed: _finish, child: const Text('Finish early')),
-      ]),
-      Expanded(child: ListView(children: setWords.map((w) => ListTile(title: Text(w))).toList())),
-      TextField(
-        onSubmitted: (v) { if (v.trim().isNotEmpty) setState(() => setWords.add(v.trim())); },
-        decoration: const InputDecoration(hintText: 'type & Enter'),
-      ),
-    ]));
+
+        if (widget.spec.type == TaskType.fluencyLetter)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                targetLetter,
+                style: const TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+
+        Text('Time remaining: $secs seconds'),
+        const SizedBox(height: 12),
+
+        Row(
+          children: [
+            FilledButton(
+              onPressed: running
+                  ? null
+                  : () {
+                setState(() => running = true);
+                _startTimer();
+              },
+              child: const Text('Start'),
+            ),
+            const SizedBox(width: 12),
+            FilledButton(
+              onPressed: (running && !_completed) ? _finish : null,
+              child: const Text('Finish'),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 12),
+
+        Expanded(
+          child: TextField(
+            controller: _textCtrl,
+            enabled: running,
+            maxLines: null,
+            expands: true,
+            decoration: const InputDecoration(
+              hintText: 'Type words here (space or new line separated)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+      ],
+    ));
   }
 
   void _finish() {
-    final count = setWords.length;
-    final s = scoreFluency(widget.spec.payload, count);
-    widget.onDone(s, {"count": count, "words": setWords.toList()});
+    if (_completed) return; // prevent double fire
+    _completed = true;
+
+    _timer?.cancel();
+
+    final rawWords = _textCtrl.text
+        .toLowerCase()
+        .split(RegExp(r'[\s,\n]+'))
+        .where((w) => w.isNotEmpty)
+        .toSet();
+
+    final words = widget.spec.type == TaskType.fluencyLetter
+        ? rawWords
+        .where((w) => w.startsWith(targetLetter.toLowerCase()))
+        .toList()
+        : rawWords.toList();
+
+    final count = words.length;
+    final score = scoreFluency(widget.spec.payload, count);
+
+    // 🔥 THIS MUST ALWAYS EXECUTE
+    widget.onDone(score, {
+      "taskType": widget.spec.type.name,
+      "letter": widget.spec.type == TaskType.fluencyLetter ? targetLetter : null,
+      "count": count,
+      "words": words,
+      "timeUsed": 60 - secs,
+    });
   }
 }
 
@@ -284,92 +494,328 @@ class _FluencyState extends State<Fluency> with SingleTickerProviderStateMixin {
 class NameAddressLearnTask extends StatelessWidget {
   final TaskSpec spec;
   final void Function(int, Map<String, dynamic>) onDone;
-  const NameAddressLearnTask({super.key, required this.spec, required this.onDone});
+
+  const NameAddressLearnTask({
+    super.key,
+    required this.spec,
+    required this.onDone,
+  });
 
   @override
   Widget build(BuildContext context) {
     final elements = (spec.payload['elements'] as List).cast<String>();
-    final weights = (spec.payload['perElementScores'] as List).cast<int>();
-    return _padded(Column(children: [
-      const Text('Name & Address — Learning'),
-      const SizedBox(height: 8),
-      ...List.generate(elements.length, (i) => ListTile(
-        title: Text(elements[i]),
-        subtitle: Text('Weight: ${weights[i]}'),
-      )),
-      const SizedBox(height: 8),
-      _ScoreSlider(
-        max: spec.max,
-        label: 'Mark total learned this trial (max ${spec.max})',
-        onSet: (s) => onDone(s, {"noted": true}),
+
+    return _padded(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Memory Task',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+
+          const Text(
+            'Please carefully read and remember the following name and address.\n'
+                'You will be asked to recall this information later in the test.',
+            style: TextStyle(fontSize: 14),
+          ),
+
+          const SizedBox(height: 20),
+
+          ...elements.map(
+                (e) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                e,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+
+          const Spacer(),
+
+          FilledButton(
+            onPressed: () {
+              // No scoring here — only learning phase
+              onDone(
+                0,
+                {
+                  "shown": elements,
+                  "instruction":
+                  "User instructed to memorize the address for later recall",
+                },
+              );
+            },
+            child: const Text('Continue'),
+          ),
+        ],
       ),
-    ]));
+    );
   }
 }
 
 /// ========== FAMOUS PEOPLE (manual count) ==========
-class FamousPeopleTask extends StatelessWidget {
-  final TaskSpec spec; final void Function(int, Map<String, dynamic>) onDone;
-  const FamousPeopleTask({super.key, required this.spec, required this.onDone});
+class FamousPeopleTask extends StatefulWidget {
+  final TaskSpec spec;
+  final void Function(int, Map<String, dynamic>) onDone;
+
+  const FamousPeopleTask({
+    super.key,
+    required this.spec,
+    required this.onDone,
+  });
+
+  @override
+  State<FamousPeopleTask> createState() => _FamousPeopleTaskState();
+}
+
+class _FamousPeopleTaskState extends State<FamousPeopleTask> {
+  final ctrls = List.generate(4, (_) => TextEditingController());
+
+  final questions = const [
+    'Who is the Prime Minister of India?',
+    'Who is the President of India?',
+    'Who is the Chief Minister of your state?',
+    'Who is the Father of the Nation?',
+  ];
+
+  /// ✅ Correct answers (can be made dynamic later)
+  final answers = const [
+    'narendra modi',
+    'droupadi murmu',
+    '', // Chief Minister → allow examiner/manual review
+    'mahatma gandhi',
+  ];
+
+  @override
+  void dispose() {
+    for (final c in ctrls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return _padded(_ScoreSlider(
-      max: spec.max,
-      label: 'How many correctly named? (max ${spec.max})',
-      onSet: (s) => onDone(s, {}),
-    ));
+    return _padded(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'General Knowledge',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+
+          const Text(
+            'Please answer the following questions:',
+            style: TextStyle(fontSize: 14),
+          ),
+
+          const SizedBox(height: 16),
+
+          ...List.generate(questions.length, (i) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: TextField(
+                controller: ctrls[i],
+                decoration: InputDecoration(
+                  labelText: questions[i],
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            );
+          }),
+
+          const Spacer(),
+
+          FilledButton(
+            onPressed: _finish,
+            child: const Text('Next'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _finish() {
+    int score = 0;
+    final userAnswers =
+    ctrls.map((c) => c.text.trim().toLowerCase()).toList();
+
+    for (int i = 0; i < answers.length; i++) {
+      if (answers[i].isEmpty) continue; // CM handled manually / later
+      if (userAnswers[i] == answers[i]) score++;
+    }
+
+    widget.onDone(
+      score.clamp(0, widget.spec.max),
+      {
+        'questions': questions,
+        'userAnswers': userAnswers,
+        'note':
+        'Chief Minister answer may require manual verification based on state',
+      },
+    );
   }
 }
 
 /// ========== COMPREHENSION (per-command toggles, auto-sum) ==========
 class ComprehensionTask extends StatefulWidget {
-  final TaskSpec spec; final void Function(int, Map<String, dynamic>) onDone;
-  const ComprehensionTask({super.key, required this.spec, required this.onDone});
+  final TaskSpec spec;
+  final void Function(int, Map<String, dynamic>) onDone;
+
+  const ComprehensionTask({
+    super.key,
+    required this.spec,
+    required this.onDone,
+  });
+
   @override
   State<ComprehensionTask> createState() => _ComprehensionTaskState();
 }
+
 class _ComprehensionTaskState extends State<ComprehensionTask> {
-  late final List<String> cmds = (widget.spec.payload['commands'] as List).cast<String>();
-  late final List<bool> ok = List<bool>.filled(cmds.length, false);
+  int index = 0;
+  int score = 0;
+  final List<Map<String, dynamic>> responses = [];
 
   @override
   Widget build(BuildContext context) {
-    return _padded(Column(children: [
-      const Text('Follow the commands: mark correct ones'),
-      Expanded(child: ListView.builder(
-        itemCount: cmds.length,
-        itemBuilder: (_, i) => CheckboxListTile(
-          title: Text(cmds[i]),
-          value: ok[i],
-          onChanged: (v) => setState(() => ok[i] = v ?? false),
-        ),
-      )),
-      FilledButton(
-        onPressed: () {
-          int s = ok.where((e) => e).length;
-          s = _clampScore(s, widget.spec.max);
-          widget.onDone(s, {"results": ok});
+    final questions =
+    (widget.spec.payload['questions'] as List).cast<Map<String, dynamic>>();
+    final q = questions[index];
+
+    return _padded(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Instruction ${index + 1} of ${questions.length}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+
+          Text(
+            q['instruction'],
+            style: const TextStyle(fontSize: 18),
+          ),
+          const SizedBox(height: 20),
+
+          ...q['options'].map<Widget>((opt) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: FilledButton.tonal(
+                onPressed: () => _select(opt),
+                child: Text(opt),
+              ),
+            );
+          }).toList(),
+        ],
+      ),
+    );
+  }
+
+  void _select(String choice) {
+    final questions =
+    (widget.spec.payload['questions'] as List).cast<Map<String, dynamic>>();
+    final q = questions[index];
+
+    if (choice == q['answer']) {
+      score++;
+    }
+
+    responses.add({
+      "question": q['instruction'],
+      "selected": choice,
+      "correct": q['answer'],
+    });
+
+    if (index + 1 < questions.length) {
+      setState(() => index++);
+    } else {
+      widget.onDone(
+        score,
+        {
+          "responses": responses,
         },
-        child: const Text('Next'),
-      )
-    ]));
+      );
+    }
   }
 }
 
 /// ========== SENTENCE WRITING (manual) ==========
-class SentenceWritingTask extends StatelessWidget {
-  final TaskSpec spec; final void Function(int, Map<String, dynamic>) onDone;
-  const SentenceWritingTask({super.key, required this.spec, required this.onDone});
+class SentenceWritingTask extends StatefulWidget {
+  final TaskSpec spec;
+  final void Function(int, Map<String, dynamic>) onDone;
+
+  const SentenceWritingTask({
+    super.key,
+    required this.spec,
+    required this.onDone,
+  });
+
+  @override
+  State<SentenceWritingTask> createState() => _SentenceWritingTaskState();
+}
+
+class _SentenceWritingTaskState extends State<SentenceWritingTask> {
+  final c1 = TextEditingController();
+  final c2 = TextEditingController();
+
   @override
   Widget build(BuildContext context) {
-    final c = TextEditingController();
-    return _padded(Column(children: [
-      const Text('Write a meaningful sentence:'),
-      const SizedBox(height: 8),
-      TextField(controller: c, maxLines: 3, decoration: const InputDecoration(border: OutlineInputBorder())),
-      const SizedBox(height: 8),
-      _ScoreSlider(max: spec.max, onSet: (s) => onDone(s, {"sentence": c.text})),
-    ]));
+    return _padded(Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Write TWO meaningful sentences about your last holiday.',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 12),
+
+        TextField(
+          controller: c1,
+          maxLines: 2,
+          decoration: const InputDecoration(
+            labelText: 'Sentence 1',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        TextField(
+          controller: c2,
+          maxLines: 2,
+          decoration: const InputDecoration(
+            labelText: 'Sentence 2',
+            border: OutlineInputBorder(),
+          ),
+        ),
+
+        const Spacer(),
+
+        FilledButton(
+          onPressed: () {
+            final score = scoreSentenceWriting(
+              c1.text,
+              c2.text,
+              maxScore: widget.spec.max,
+            );
+
+            widget.onDone(score, {
+              "sentence1": c1.text,
+              "sentence2": c2.text,
+            });
+          },
+          child: const Text('Next'),
+        ),
+      ],
+    ));
   }
 }
 

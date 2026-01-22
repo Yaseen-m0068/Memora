@@ -7,16 +7,34 @@ final List<TaskSpec> kAceTasks = [
     // date, month, year, day/season; place: floor/hospital/city/state/country (edit rubric to 18 if you use full).
     "fields": ["day","date","month","year","season","floor","hospital","city","state","country"],
   }), // p1
+  TaskSpec(
+    id: "t.attention.audio",
+    type: TaskType.attentionAudio,
+    domain: Domain.attention,
+    max: 3,
+    payload: {
+      "words": ["lemon", "key", "ball"],
+      "ttsDelayMs": 1200,
+      "inputDelaySec": 10,
+    },
+  ),
 
-  TaskSpec(id: "t.digitSpan", type: TaskType.digitSpan, domain: Domain.attention, max: 3, payload: {
-    "forward": ["3 7 2", "4 1 5 9"], "backward": ["5 2 9"],
-  }), // p1 (placeholders)
+
 
   TaskSpec(id: "t.serial7", type: TaskType.serial7, domain: Domain.attention, max: 5, payload: {"start": 100, "steps": 7}), // p1
 
-  TaskSpec(id: "t.recall3", type: TaskType.recall3, domain: Domain.memory, max: 3, payload: {
-    "words": ["banana","chair","sunset"] // replace with clinician-approved triad for Malayalam.
-  }), // p2
+  TaskSpec(
+    id: "t.recall3.audio",
+    type: TaskType.recall3,
+    domain: Domain.memory,
+    max: 3,
+    payload: {
+      "words": ["lemon", "ball", "key"],
+      "ttsDelayMs": 1200,   // delay between words
+      "inputDelaySec": 5    // wait before showing text fields
+    },
+  ),
+
 
   TaskSpec(id: "t.fluency.letter", type: TaskType.fluencyLetter, domain: Domain.fluency, max: 7, payload: {
     "letter": "ക", // sample Malayalam letter; confirm with clinician.
@@ -38,17 +56,64 @@ final List<TaskSpec> kAceTasks = [
     ]
   }), // p2
 
-  TaskSpec(id: "t.nameaddr.learn", type: TaskType.nameAddressLearn, domain: Domain.memory, max: 7, payload: {
-    // p3 + p9: elements & trials
-    "elements": ["Velayudhan Thampi","42 Kovil Road","Chengamanad","Elanji"], // from sheet; store locally; confirm right to use.
-    "perElementScores": [2,3,1,1] // p3 table shows element weights summing to 7.
-  }),
+  TaskSpec(
+    id: "t.nameaddr.learn",
+    type: TaskType.nameAddressLearn,
+    domain: Domain.memory,
+    max: 0, // ⚠️ No score at learning stage
+    payload: {
+      "instruction":
+      "Please read and remember the name and address below.\nYou will be asked to recall it later in the test.",
+      "elements": [
+        "Velayudhan Thampi",
+        "42 Kovil Road",
+        "Chengamanad",
+        "Ernakulam",
+      ],
+    },
+  ),
 
-  TaskSpec(id: "t.famous", type: TaskType.famousPeople, domain: Domain.memory, max: 4, payload: {"count": 4}), // p3
+  TaskSpec(
+id: "t.famous",
+type: TaskType.famousPeople,
+domain: Domain.language,
+max: 4,
+payload: {
+"questions": [
+"Who is the Prime Minister of India?",
+"Who is the President of India?",
+"Who is the Chief Minister of your state?",
+"Who is the Father of the Nation?",
+]
+},
+), // p3
 
-  TaskSpec(id: "t.comp.basic", type: TaskType.comprehension, domain: Domain.language, max: 3, payload: {
-    "commands": ["Close your eyes","Open your mouth","Show me two fingers"] // replace with ML lines from sheet.
-  }), // p3
+  TaskSpec(
+    id: 'language_comprehension',
+    type: TaskType.comprehension,
+    domain: Domain.language,
+    max: 3,
+    payload: {
+      "questions": [
+        {
+          "instruction": "Which one is used to write?",
+          "options": ["Spoon", "Pen", "Plate"],
+          "answer": "Pen",
+        },
+        {
+          "instruction": "Which one do we wear on the foot?",
+          "options": ["Hat", "Shoe", "Glove"],
+          "answer": "Shoe",
+        },
+        {
+          "instruction": "Which one shows time?",
+          "options": ["Clock", "Book", "Bottle"],
+          "answer": "Clock",
+        },
+      ]
+    },
+  ),
+// p3
 
   TaskSpec(id: "t.sentence", type: TaskType.sentenceWriting, domain: Domain.language, max: 5),
 
