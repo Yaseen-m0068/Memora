@@ -6,7 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-
+import 'state/providers.dart';
 import 'models.dart';
 import 'data/tasks.dart';
 import 'scoring.dart';
@@ -21,14 +21,6 @@ import 'ui/login_screen.dart';
 import 'ui/register_screen.dart';
 import 'theme/app_colors.dart';
 
-
-final assessmentProvider = StateProvider<Assessment>((ref) {
-  return Assessment(
-    id: const Uuid().v4(),
-    language: "ml",
-    startedAt: DateTime.now(),
-  );
-});
 
 // --- Auth providers ---
 final authServiceProvider = Provider<AuthService>((_) => AuthService());
@@ -213,29 +205,87 @@ class _TaskHostState extends ConsumerState<TaskHost> {
   }
 
 
-  Future<void> _finish(int score, Map<String, dynamic> data) async {
+  Future<void> _finish(int uiScore, Map<String, dynamic> data) async {
     final spec = kAceTasks[widget.index];
     final assessment = ref.read(assessmentProvider);
 
-    final updated = assessment.copyWith(
-      responses: [
-        ...assessment.responses,
-        ResponseModel(taskId: spec.id, data: data, score: score),
-      ],
-    );
+    int realScore = uiScore;
 
-    ref.read(assessmentProvider.notifier).state = updated;
+    switch (spec.type) {
+
+      case TaskType.serial7:
+        print("UI SCORE RECEIVED = $uiScore");
+        print("DATA RECEIVED = $data");
+
+        realScore = scoreSerial7(
+          (data['answers'] as List?)?.cast<int?>() ?? [],
+          spec.start ?? 100,
+          spec.step ?? 7,
+        );
+
+        print("RECALCULATED SCORE = $realScore");
+        break;
+
+      case TaskType.recall3:
+        realScore = scoreRecall3(
+          (data['answers'] as List?)?.cast<String>() ?? [],
+          (spec.meta?['target'] as List?)?.cast<String>() ?? [],
+        );
+        break;
+
+      case TaskType.fluencyLetter:
+      case TaskType.fluencyAnimals:
+        realScore = scoreFluency(data, data['count'] ?? 0);
+        break;
+
+      case TaskType.countDots:
+        realScore = scoreDots(
+          (data['answers'] as List?)?.cast<int?>() ?? [],
+          (spec.meta?['answers'] as List?)?.cast<int>() ?? [],
+        );
+        break;
+
+      case TaskType.sentenceWriting:
+        realScore = scoreSentenceWriting(
+          data['s1'] ?? '',
+          data['s2'] ?? '',
+          maxScore: spec.maxScore,
+        );
+        break;
+
+      case TaskType.comprehension:
+        realScore = scoreComprehension(
+          (data['answers'] as List?)?.cast<String>() ?? [],
+          (spec.meta?['correct'] as List?)?.cast<String>() ?? [],
+        );
+        break;
+
+      default:
+        realScore = uiScore;
+    }
+
+    ref.read(assessmentProvider.notifier).state =
+        assessment.copyWith(
+          responses: [
+            ...assessment.responses,
+            ResponseModel(
+              taskId: spec.id,
+              data: data,
+              score: realScore,
+            ),
+          ],
+        );
+
+    print("SAVED → ${spec.id} : $realScore");
 
     if (widget.index + 1 < kAceTasks.length) {
       context.go('/task/${widget.index + 1}');
     } else {
       await _saveAssessmentToFirestore(
-      ref.read(assessmentProvider),
+        ref.read(assessmentProvider),
       );
-
       context.go('/result');
     }
-
   }
 
   void _confirmExit(BuildContext context) {

@@ -14,23 +14,44 @@ class ResultScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final a = ref.watch(assessmentProvider);
     final sb = Scorebook();
+
+    print("\n=========== RAW TASK SCORES ===========");
+
     for (final r in a.responses) {
       final spec = kAceTasks.firstWhere((t) => t.id == r.taskId);
+
+      print("${r.taskId} -> ${r.score}");
+
       sb.add(spec.domain, r.score);
     }
+
+    print("\n=========== DOMAIN TOTALS ===========");
+
+    print("Attention: ${sb.getDomainScore(Domain.attention)}");
+    print("Memory: ${sb.getDomainScore(Domain.memory)}");
+    print("Fluency: ${sb.getDomainScore(Domain.fluency)}");
+    print("Language: ${sb.getDomainScore(Domain.language)}");
+    print("Visuospatial: ${sb.getDomainScore(Domain.visuospatial)}");
+
+    print("\n=========== FINAL TOTAL ===========");
+    print("TOTAL SCORE = ${sb.total}");
+    print("====================================\n");
     return Scaffold(
       appBar: AppBar(title: const Text('Result')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Image.asset('assets/avatars/result.png', height: 260),
-          Text('Total: ${sb.total} / 100', style: Theme.of(context).textTheme.headlineMedium),
+          Text('Total: ${sb.total} / 100',
+              style: Theme.of(context).textTheme.headlineMedium),
+
           const SizedBox(height: 12),
-          _row('Attention', sb.forDomain(Domain.attention), 18),
-          _row('Memory', sb.forDomain(Domain.memory), 26),
-          _row('Fluency', sb.forDomain(Domain.fluency), 14),
-          _row('Language', sb.forDomain(Domain.language), 26),
-          _row('Visuospatial', sb.forDomain(Domain.visuospatial), 16),
+
+          _row('Attention', sb.getDomainScore(Domain.attention), 18),
+          _row('Memory', sb.getDomainScore(Domain.memory), 26),
+          _row('Fluency', sb.getDomainScore(Domain.fluency), 14),
+          _row('Language', sb.getDomainScore(Domain.language), 26),
+          _row('Visuospatial', sb.getDomainScore(Domain.visuospatial), 16),
           const Spacer(),
           FilledButton.icon(
             onPressed: () {

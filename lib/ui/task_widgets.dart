@@ -271,28 +271,27 @@ class _Serial7State extends State<Serial7> {
 
   void _submit() {
     int score = 0;
-    int current = widget.spec.payload['start'] as int;
-    final step = widget.spec.payload['steps'] as int;
 
-    final userAnswers = <int?>[];
+    final meta = widget.spec.meta ?? {};
 
-    for (int i = 0; i < 5; i++) {
-      current -= step;
-      final val = int.tryParse(ctrls[i].text.trim());
-      userAnswers.add(val);
+    int current = meta['start'] as int? ?? 100;
+    final step = meta['step'] as int? ?? 7;
 
-      if (val == current) {
+    for (final c in ctrls) {
+      final val = int.tryParse(c.text);
+      if (val == null) continue;
+
+      if (val == current - step) {
         score++;
+        current = val;
       }
     }
 
-    widget.onDone(
-      score,
-      {
-        "userAnswers": userAnswers,
-        "max": 5,
-      },
-    );
+    print("SERIAL7 SCORE = $score"); // 👈 ADD THIS
+
+    widget.onDone(score, {
+      'answers': ctrls.map((c) => int.tryParse(c.text)).toList(),
+    });
   }
 }
 
@@ -308,7 +307,7 @@ class _Recall3TaskState extends State<Recall3Task> {
   final ctrls = List.generate(3, (_) => TextEditingController());
   @override
   Widget build(BuildContext context) {
-    final words = (widget.spec.payload['words'] as List).cast<String>();
+    final words = (widget.spec.meta?['words'] as List?)?.cast<String>() ?? [];
     return _padded(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Recall the three words:'),
       const SizedBox(height: 8),
@@ -366,9 +365,16 @@ class _FluencyState extends State<Fluency> {
     _textCtrl.clear();
 
     if (widget.spec.type == TaskType.fluencyLetter) {
-      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      targetLetter =
-      letters[DateTime.now().millisecondsSinceEpoch % letters.length];
+      final specLetter = widget.spec.payload['letter'] as String?;
+      if (specLetter != null && specLetter.isNotEmpty) {
+        targetLetter = specLetter;
+      } else {
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        targetLetter =
+            letters[DateTime.now().millisecondsSinceEpoch % letters.length];
+      }
+    } else {
+      targetLetter = '';
     }
   }
 
@@ -448,9 +454,15 @@ class _FluencyState extends State<Fluency> {
             enabled: running,
             maxLines: null,
             expands: true,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: 'Type words here (space or new line separated)',
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
+              suffixIcon: _textCtrl.text.isNotEmpty
+                  ? IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () => setState(() => _textCtrl.clear()),
+              )
+                  : null,
             ),
           ),
         ),

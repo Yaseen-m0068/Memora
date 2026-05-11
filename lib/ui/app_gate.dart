@@ -26,12 +26,11 @@ class AppGate extends StatelessWidget {
 
   Future<Widget> _decide() async {
     final prefs = await SharedPreferences.getInstance();
-    final welcomeSeen = prefs.getBool('welcome_seen') ?? false;
-    final user = FirebaseAuth.instance.currentUser;
+    final seen = prefs.getBool('seen_welcome') ?? false;
 
-    if (!welcomeSeen) {
-      return const WelcomeScreen();
-    }
+    if (!seen) return const WelcomeScreen();
+
+    final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
       return const LoginScreen();

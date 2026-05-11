@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -54,7 +55,11 @@ class WelcomeScreen extends StatelessWidget {
                       backgroundColor: const Color(0xFF5DAA8B),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    onPressed: () => context.go('/register'),
+                    onPressed: () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool('seen_welcome', true);
+                      if (context.mounted) context.go('/register');
+                    },
                     child: const Text(
                       'Create Account',
                       style: TextStyle(fontSize: 16),
@@ -68,7 +73,11 @@ class WelcomeScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       side: const BorderSide(color: Color(0xFF5DAA8B)),
                     ),
-                    onPressed: () => context.go('/login'),
+                    onPressed: () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool('seen_welcome', true);
+                      if (context.mounted) context.go('/login');
+                    },
                     child: const Text(
                       'Login',
                       style: TextStyle(

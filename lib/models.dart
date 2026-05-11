@@ -30,12 +30,26 @@ class TaskSpec {
   final String id;
   final TaskType type;
   final Domain domain;
-  final int max;
-  final Map<String, dynamic> payload;
+  final int maxScore;
+  final Map<String, dynamic> meta;
+
   const TaskSpec({
-    required this.id, required this.type, required this.domain,
-    required this.max, this.payload = const {},
+    required this.id,
+    required this.type,
+    required this.domain,
+    required this.maxScore,
+    this.meta = const {},
   });
+
+  /// 🔹 BACKWARD COMPAT (so old UI doesn't crash)
+
+  int get max => maxScore;
+
+  Map<String, dynamic> get payload => meta;
+
+  int? get start => meta['start'];
+
+  int? get step => meta['step'];
 }
 
 class ResponseModel {

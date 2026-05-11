@@ -2,21 +2,20 @@
 import 'models.dart';
 
 class Scorebook {
-  final Map<Domain, int> _domainScores = {};
+  final Map<String, int> _domainScores = {};
 
-  void add(Domain domain, int score) {
-    _domainScores[domain] = (_domainScores[domain] ?? 0) + score;
+  void add(Domain domain, int? score) {
+    final key = domain.name;
+    _domainScores[key] = (_domainScores[key] ?? 0) + (score ?? 0);
   }
 
-  int total() {
+  int getDomainScore(Domain domain) {
+    return _domainScores[domain.name] ?? 0;
+  }
+
+  int get total {
     return _domainScores.values.fold(0, (a, b) => a + b);
   }
-
-  int forDomain(Domain domain) {
-    return _domainScores[domain] ?? 0;
-  }
-
-  Map<Domain, int> breakdown() => _domainScores;
 }
 
 /// ===============================
@@ -68,11 +67,29 @@ int scoreRecall3(List<String> user, List<String> target) {
 /// FLUENCY
 /// ===============================
 
-int scoreFluency(Map payload, int count) {
-  // Simple ACE-style thresholds
-  if (count >= 12) return 3;
-  if (count >= 8) return 2;
-  if (count >= 5) return 1;
+int scoreFluency(Map? payload, int count) {
+  if (count <= 0) return 0;
+  
+  final thresholds = payload?['thresholds'] as List?;
+  if (thresholds != null) {
+    for (final t in thresholds) {
+      final map = t as Map<dynamic, dynamic>;
+      final scoreVal = map['score'] as int;
+      
+      bool match = true;
+      if (map.containsKey('gt') && count <= (map['gt'] as int)) match = false;
+      if (map.containsKey('min') && count < (map['min'] as int)) match = false;
+      if (map.containsKey('max') && count > (map['max'] as int)) match = false;
+      
+      if (match) return scoreVal;
+    }
+  }
+  
+  // Fallback for custom ranges or missing thresholds
+  if (count >= 15) return 7;
+  if (count >= 12) return 5;
+  if (count >= 8) return 3;
+  if (count >= 4) return 1;
   return 0;
 }
 
